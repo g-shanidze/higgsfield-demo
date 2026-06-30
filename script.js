@@ -1,12 +1,13 @@
 /*
  * Native-playback scroll experience.
- * A downward scroll intent plays the film start -> end in one smooth motion
- * (decoded at native fps, so no seek stutter). An upward intent rewinds it.
- * Overlays are synced to playback time, not scroll position.
+ * Scrolling down plays the forward clip; scrolling up plays a pre-reversed clip
+ * forward. Both directions are real native playback (decoded forward), so neither
+ * stutters the way backward seeking does. Overlays sync to whichever clip is active.
  */
 
 const stage = document.querySelector(".stage");
-const video = document.getElementById("hero-video");
+const fwd = document.getElementById("hero-video");
+const rev = document.getElementById("hero-video-rev");
 const logo = document.getElementById("logo-overlay");
 const endOverlay = document.getElementById("end-overlay");
 const hotspot = document.getElementById("hotspot");
@@ -19,24 +20,30 @@ stage.classList.add("loading");
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const range = (x, inMin, inMax) => clamp((x - inMin) / (inMax - inMin), 0, 1);
 
+const RATE = 2; // playback speed multiplier
 let duration = 5;
-let reverseRAF = null;
-const PLAY_RATE = 2; // playback / rewind speed multiplier
-video.playbackRate = PLAY_RATE;
+let active = "fwd"; // which clip is currently shown
 
-video.addEventListener("loadedmetadata", () => {
-  duration = video.duration || 5;
+[fwd, rev].forEach((v) => (v.playbackRate = RATE));
+
+fwd.addEventListener("loadedmetadata", () => {
+  duration = fwd.duration || 5;
   stage.classList.remove("loading");
 });
-if (video.readyState >= 1) {
-  duration = video.duration || 5;
+if (fwd.readyState >= 1) {
+  duration = fwd.duration || 5;
   stage.classList.remove("loading");
 }
 
-/* ---- Overlay sync (runs every frame; cheap style writes) ---- */
-function syncOverlays() {
-  const p = duration ? clamp(video.currentTime / duration, 0, 1) : 0;
+/* ---- Progress + overlay sync ---- */
+// Normalised journey position 0 (launch) -> 1 (end), regardless of active clip.
+function progress() {
+  if (active === "rev") return clamp(1 - rev.currentTime / duration, 0, 1);
+  return clamp(fwd.currentTime / duration, 0, 1);
+}
 
+function syncOverlays() {
+  const p = progress();
   progressFill.style.transform = `scaleX(${p})`;
   logo.style.opacity = 1 - range(p, 0.0, 0.12);
   endOverlay.style.opacity = range(p, 0.78, 0.96);
@@ -51,44 +58,63 @@ function syncOverlays() {
   syncOverlays();
   requestAnimationFrame(loop);
 })();
-// Belt-and-suspenders: also sync on the video's own events so overlays stay
-// correct even if rAF is throttled (e.g. background/inactive tab).
-["timeupdate", "seeked", "play", "pause", "ended"].forEach((ev) =>
-  video.addEventListener(ev, syncOverlays)
-);
+["timeupdate", "seeked", "play", "pause", "ended"].forEach((ev) => {
+  fwd.addEventListener(ev, syncOverlays);
+  rev.addEventListener(ev, syncOverlays);
+});
 syncOverlays();
 
-/* ---- Playback control ---- */
-function stopReverse() {
-  if (reverseRAF) cancelAnimationFrame(reverseRAF);
-  reverseRAF = null;
+/* ---- Direction control ---- */
+function setActive(which) {
+  active = which;
+  fwd.classList.toggle("is-active", which === "fwd");
+  rev.classList.toggle("is-active", which === "rev");
+}
+
+// Seek a video to t, then run cb once the frame is ready (with a timeout guard
+// so a swap never visibly shows an undecoded frame).
+function seekThen(v, t, cb) {
+  if (Math.abs(v.currentTime - t) < 0.02) { cb(); return; }
+  let done = false;
+  const fire = () => { if (done) return; done = true; cb(); };
+  v.addEventListener("seeked", fire, { once: true });
+  setTimeout(fire, 200);
+  v.currentTime = t;
 }
 
 function playForward() {
-  stopReverse();
-  if (video.currentTime >= duration - 0.03) return; // already at the end
-  video.playbackRate = PLAY_RATE;
-  video.play().catch(() => {});
+  if (active === "fwd") {
+    if (fwd.currentTime >= duration - 0.03) return; // already at the end
+    fwd.playbackRate = RATE;
+    fwd.play().catch(() => {});
+    return;
+  }
+  // Hand off from the reverse clip: mirror the timeline and switch.
+  rev.pause();
+  const t = clamp(duration - rev.currentTime, 0, duration);
+  seekThen(fwd, t, () => {
+    setActive("fwd");
+    fwd.playbackRate = RATE;
+    fwd.play().catch(() => {});
+  });
 }
 
 function playReverse() {
-  if (reverseRAF) return;            // already rewinding
-  if (video.currentTime <= 0.03) return;
-  video.pause();
-  let last = performance.now();
-  const step = (now) => {
-    const dt = (now - last) / 1000;
-    last = now;
-    const t = video.currentTime - dt * PLAY_RATE; // rewind at matched speed
-    if (t <= 0) {
-      video.currentTime = 0;
-      reverseRAF = null;
-      return;
-    }
-    video.currentTime = t;
-    reverseRAF = requestAnimationFrame(step);
-  };
-  reverseRAF = requestAnimationFrame(step);
+  if (active === "rev") {
+    if (rev.currentTime >= duration - 0.03) return; // already back at launch
+    rev.playbackRate = RATE;
+    rev.play().catch(() => {});
+    return;
+  }
+  // Hand off from the forward clip.
+  fwd.pause();
+  if (fwd.currentTime <= 0.03) return; // already at launch
+  const t = clamp(duration - fwd.currentTime, 0, duration);
+  seekThen(rev, t, () => {
+    setActive("rev");
+    rev.playbackRate = RATE;
+    rev.play().catch(() => {});
+  });
 }
 
 function onIntent(dir) {
@@ -96,10 +122,7 @@ function onIntent(dir) {
   else if (dir < 0) playReverse();
 }
 
-/* If a forward intent arrives mid-rewind, hand back to native play */
-video.addEventListener("play", stopReverse);
-
-/* ---- Input capture (scroll is locked; we interpret intent) ---- */
+/* ---- Input capture (native scroll locked; we interpret intent) ---- */
 window.addEventListener(
   "wheel",
   (e) => {
@@ -111,20 +134,13 @@ window.addEventListener(
 );
 
 let touchY = null;
-window.addEventListener(
-  "touchstart",
-  (e) => { touchY = e.touches[0].clientY; },
-  { passive: true }
-);
+window.addEventListener("touchstart", (e) => { touchY = e.touches[0].clientY; }, { passive: true });
 window.addEventListener(
   "touchmove",
   (e) => {
     if (touchY === null) return;
-    const dy = touchY - e.touches[0].clientY; // swipe up => positive => forward
-    if (Math.abs(dy) > 6) {
-      onIntent(Math.sign(dy));
-      touchY = e.touches[0].clientY;
-    }
+    const dy = touchY - e.touches[0].clientY; // swipe up => forward
+    if (Math.abs(dy) > 6) { onIntent(Math.sign(dy)); touchY = e.touches[0].clientY; }
     e.preventDefault();
   },
   { passive: false }
