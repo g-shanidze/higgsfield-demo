@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Abastumani — A Forest Retreat</title>
+  <meta name="description" content="A boutique hotel nestled in the Georgian forest. Scroll to explore." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Inter:wght@300;400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Fixed cinematic stage -->
+  <div class="stage">
+    <video
+      id="hero-video"
+      class="hero-video"
+      src="assets/hotel.mp4"
+      muted
+      playsinline
+      webkit-playsinline
+      preload="auto"
+    ></video>
+    <div class="vignette"></div>
+
+    <!-- Launch logo overlay -->
+    <div class="logo-overlay" id="logo-overlay">
+      <img src="assets/logo.png" alt="Abastumani" class="logo-img" />
+      <div class="scroll-hint">
+        <span>Scroll to explore</span>
+        <div class="scroll-line"></div>
+      </div>
+    </div>
+
+    <!-- Room hotspot over a window -->
+    <button class="hotspot" id="hotspot" aria-label="View room details">
+      <span class="hotspot-dot"></span>
+    </button>
+
+    <!-- Room detail card -->
+    <div class="room-card" id="room-card" role="dialog" aria-label="Room details">
+      <button class="room-close" id="room-close" aria-label="Close">&times;</button>
+      <span class="room-eyebrow">Forest View</span>
+      <h3 class="room-title">Deluxe Balcony Room</h3>
+      <p class="room-text">Warm timber interiors, a private balcony over the pines, and the river as your soundtrack.</p>
+      <div class="room-meta">
+        <span>From $140 / night</span>
+      </div>
+      <a class="room-cta" href="#">Book this room</a>
+    </div>
+
+    <!-- End call-to-action -->
+    <div class="end-overlay" id="end-overlay">
+      <span class="end-eyebrow">Abastumani · Georgia</span>
+      <h1 class="end-title">Wake up in the forest</h1>
+      <a class="end-cta" href="#">Reserve your stay</a>
+    </div>
+
+    <!-- Playback progress bar -->
+    <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
